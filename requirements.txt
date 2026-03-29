@@ -1,0 +1,8 @@
+pandas>=2.3.3
+numpy>=2.2.6
+jax==0.6.2
+jax-cuda12-pjrt==0.6.2
+jax-cuda12-plugin==0.6.2
+jaxlib==0.6.2
+mlflow>=3.10.0
+metaflow>=2.19.19

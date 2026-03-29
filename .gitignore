@@ -1,0 +1,8 @@
+/.metaflow
+/.vscode
+/mlruns
+*coefficients*.txt
+X_features.csv
+*.pptx
+/Guidelines
+__pycache__/
