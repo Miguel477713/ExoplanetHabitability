@@ -6,6 +6,8 @@ import mlflow
 from Data.Preprocessing import GetJaxArrays
 from Models.LinearRegressionPipeline import RunLinearRegressionPipeline
 from Models.LogisticRegressionPipeline import RunLogisticRegressionPipeline
+from Models.DecisionTreePipeline import RunDecisionTreePipeline
+from Models.MLPPipeline import RunMLPPipeline
 from Utils.MlflowUtils import ConfigureMlflow
 from Utils.SplitDataUtils import StratifiedKFoldIndices, StratifiedTrainTestIndices, PrintClassDistribution
 
@@ -16,8 +18,8 @@ class WorkFlow(FlowSpec):
 
     @step
     def start(self) -> None:
-        self.useCrossValidation = True
-        self.kFolds = 5
+        self.useCrossValidation = False
+        self.kFolds = 4
         self.next(self.load_data)
 
     @step
@@ -32,7 +34,7 @@ class WorkFlow(FlowSpec):
     def feature_engineering(self):
         ConfigureMlflow()
 
-        self.X, self.Y, _ = GetJaxArrays(self.dataFrame)
+        self.X, self.Y, self.featureNames = GetJaxArrays(self.dataFrame)
         self.featureCountBeforeIntercept = int(self.X.shape[1])
         self.sampleCount = int(self.X.shape[0])
         self.classCount = int(jax.numpy.max(self.Y)) + 1
@@ -85,6 +87,33 @@ class WorkFlow(FlowSpec):
     def logistic_regression(self):
         ConfigureMlflow()
         self.logisticResults = RunLogisticRegressionPipeline(
+            self.X,
+            self.Y,
+            self.splits,
+            self.classCount,
+            self.useCrossValidation,
+            self.kFolds,
+        )
+        self.next(self.decision_tree)
+
+    @step
+    def decision_tree(self):
+        ConfigureMlflow()
+        self.decisionTreeResults = RunDecisionTreePipeline(
+            self.X,
+            self.Y,
+            self.splits,
+            self.classCount,
+            self.useCrossValidation,
+            self.kFolds,
+            self.featureNames,
+        )
+        self.next(self.mlp)
+
+    @step
+    def mlp(self):
+        ConfigureMlflow()
+        self.mlpResults = RunMLPPipeline(
             self.X,
             self.Y,
             self.splits,

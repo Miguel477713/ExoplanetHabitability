@@ -44,9 +44,10 @@ def GetJaxArrays(dataFrame):
                             "S_ABIO_ZONE", #E38 exponent, probably sentinent value
                             "P_DISTANCE", "P_DISTANCE_EFF", #highly correlated, actually the same: P_SEMI_MAJOR_AXIS ≈ P_DISTANCE ≈ P_DISTANCE_EFF
                             "P_HABZONE_OPT", "P_HABZONE_CON", # same as P_HABITABLE
-                            "S_TYPE"]
+                            "S_TYPE", 
+                            "P_TYPE_TEMP"] #strong predictor for linear model
             
-    categorical = ["P_TYPE_TEMP","S_TYPE_TEMP","P_TYPE"]
+    categorical = ["S_TYPE_TEMP","P_TYPE"]
 
     dataFrame = (
         dataFrame.drop(columns=dataFrame.filter(like="_ERROR_").columns)

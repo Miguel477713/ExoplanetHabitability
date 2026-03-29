@@ -2,6 +2,7 @@
 /.vscode
 /mlruns
 *coefficients*.txt
+*decision*.txt
 X_features.csv
 *.pptx
 /Guidelines
