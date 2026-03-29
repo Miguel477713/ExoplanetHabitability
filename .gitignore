@@ -6,3 +6,4 @@ X_features.csv
 *.pptx
 /Guidelines
 __pycache__/
+*.png

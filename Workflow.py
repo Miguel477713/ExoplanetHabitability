@@ -16,7 +16,7 @@ class WorkFlow(FlowSpec):
 
     @step
     def start(self) -> None:
-        self.useCrossValidation = False
+        self.useCrossValidation = True
         self.kFolds = 5
         self.next(self.load_data)
 
@@ -42,16 +42,10 @@ class WorkFlow(FlowSpec):
         if self.useCrossValidation:
             self.splits = StratifiedKFoldIndices(self.Y, k=self.kFolds, seed=0)
         else:
-            trainIndices, testIndices = StratifiedTrainTestIndices(
-                self.Y,
-                trainFraction=0.8,
-                seed=0
-            )
+            trainIndices, testIndices = StratifiedTrainTestIndices(self.Y, trainFraction=0.8, seed=0)
             self.splits = [(trainIndices, testIndices)]
 
-            XTraining = self.X[trainIndices, :]
             YTraining = self.Y[trainIndices]
-            XTest = self.X[testIndices, :]
             YTest = self.Y[testIndices]
 
             PrintClassDistribution("Training set", YTraining)
@@ -81,6 +75,7 @@ class WorkFlow(FlowSpec):
             self.X,
             self.Y,
             self.splits,
+            self.classCount,
             self.useCrossValidation,
             self.kFolds,
         )
