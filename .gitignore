@@ -3,6 +3,7 @@
 /mlruns
 *coefficients*.txt
 *decision*.txt
+*adaboost*.txt
 X_features.csv
 *.pptx
 /Guidelines

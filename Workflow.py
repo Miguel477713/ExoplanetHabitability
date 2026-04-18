@@ -1,5 +1,8 @@
 import pandas
 from metaflow import FlowSpec, step
+import os
+#os.environ["JAX_PLATFORM_NAME"] = "cpu"
+#os.environ["CUDA_VISIBLE_DEVICES"] = ""
 import jax
 import mlflow
 
@@ -8,6 +11,7 @@ from Models.LinearRegressionPipeline import RunLinearRegressionPipeline
 from Models.LogisticRegressionPipeline import RunLogisticRegressionPipeline
 from Models.DecisionTreePipeline import RunDecisionTreePipeline
 from Models.MLPPipeline import RunMLPPipeline
+from Models.AdaBoostPipeline import RunAdaBoostPipeline
 from Utils.MlflowUtils import ConfigureMlflow
 from Utils.SplitDataUtils import StratifiedKFoldIndices, StratifiedTrainTestIndices, PrintClassDistribution
 
@@ -18,8 +22,8 @@ class WorkFlow(FlowSpec):
 
     @step
     def start(self) -> None:
-        self.useCrossValidation = False
-        self.kFolds = 4
+        self.useCrossValidation = True
+        self.kFolds = 5
         self.next(self.load_data)
 
     @step
@@ -120,6 +124,48 @@ class WorkFlow(FlowSpec):
             self.classCount,
             self.useCrossValidation,
             self.kFolds,
+        )
+        self.next(self.adaboost_linear)
+
+    @step
+    def adaboost_linear(self):
+        ConfigureMlflow()
+        self.adaboostLinearResults = RunAdaBoostPipeline(
+            self.X,
+            self.Y,
+            self.splits,
+            self.classCount,
+            self.useCrossValidation,
+            self.kFolds,
+            "linear",
+        )
+        self.next(self.adaboost_logistic)
+
+    @step
+    def adaboost_logistic(self):
+        ConfigureMlflow()
+        self.adaboostLogisticResults = RunAdaBoostPipeline(
+            self.X,
+            self.Y,
+            self.splits,
+            self.classCount,
+            self.useCrossValidation,
+            self.kFolds,
+            "logistic",
+        )
+        self.next(self.adaboost_decision_tree)
+
+    @step
+    def adaboost_decision_tree(self):
+        ConfigureMlflow()
+        self.adaboostDecisionTreeResults = RunAdaBoostPipeline(
+            self.X,
+            self.Y,
+            self.splits,
+            self.classCount,
+            self.useCrossValidation,
+            self.kFolds,
+            "decision_tree",
         )
         self.next(self.end)
 
