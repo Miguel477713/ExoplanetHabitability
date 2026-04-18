@@ -6,3 +6,6 @@ jax-cuda12-plugin==0.6.2
 jaxlib==0.6.2
 mlflow>=3.10.0
 metaflow>=2.19.19
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pyscript>=0.3.3

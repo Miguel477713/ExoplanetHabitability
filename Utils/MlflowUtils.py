@@ -1,7 +1,8 @@
-import os
+from pathlib import Path
 import mlflow
 
-TRACKING_URI = "file:///mnt/d/Users/migue/Escritorio/Computer science masters/Machine learning/Final project/mlruns"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+TRACKING_URI = PROJECT_ROOT.joinpath("mlruns").resolve().as_uri()
 
 def ConfigureMlflow():
     mlflow.set_tracking_uri(TRACKING_URI)
