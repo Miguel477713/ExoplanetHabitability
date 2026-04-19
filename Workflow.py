@@ -11,6 +11,7 @@ from Models.LinearRegressionPipeline import RunLinearRegressionPipeline
 from Models.LogisticRegressionPipeline import RunLogisticRegressionPipeline
 from Models.DecisionTreePipeline import RunDecisionTreePipeline
 from Models.MLPPipeline import RunMLPPipeline
+from Models.MixtureModelPipeline import RunMixtureModelPipeline
 from Models.AdaBoostPipeline import RunAdaBoostPipeline
 from Utils.MlflowUtils import ConfigureMlflow
 from Utils.SplitDataUtils import StratifiedTrainTestIndices, PrintClassDistribution
@@ -35,7 +36,7 @@ class WorkFlow(FlowSpec):
     def feature_engineering(self):
         ConfigureMlflow()
 
-        self.X, self.Y, self.featureNames = GetJaxArrays(self.dataFrame)
+        self.X, self.Y, self.featureNames, self.preprocessingSummary = GetJaxArrays(self.dataFrame)
         self.featureCountBeforeIntercept = int(self.X.shape[1])
         self.sampleCount = int(self.X.shape[0])
         self.classCount = int(jax.numpy.max(self.Y)) + 1
@@ -63,6 +64,8 @@ class WorkFlow(FlowSpec):
             mlflow.log_param("train_fraction", self.trainFraction)
             mlflow.log_param("training_sample_count", int(trainIndices.shape[0]))
             mlflow.log_param("test_sample_count", int(testIndices.shape[0]))
+            for key, value in self.preprocessingSummary.items():
+                mlflow.log_param(key, value)
             mlflow.log_artifact("X_features.csv")
 
         self.next(self.linear_regression)
@@ -105,6 +108,17 @@ class WorkFlow(FlowSpec):
     def mlp(self):
         ConfigureMlflow()
         self.mlpResults = RunMLPPipeline(
+            self.X,
+            self.Y,
+            self.splits,
+            self.classCount,
+        )
+        self.next(self.mixture_model)
+
+    @step
+    def mixture_model(self):
+        ConfigureMlflow()
+        self.mixtureModelResults = RunMixtureModelPipeline(
             self.X,
             self.Y,
             self.splits,

@@ -2,8 +2,11 @@ import numpy
 import pandas
 import jax
 
+
 def buildFeaturesWithMedianImputation(dataFrame, numericColumns):
     newColumnsToAdd: dict[str, numpy.ndarray] = {}
+    imputedColumnCount = 0
+    totalImputedValues = 0
 
     for column in numericColumns:
         colValues = dataFrame[column].to_numpy(dtype=numpy.float64, copy=False)
@@ -13,7 +16,8 @@ def buildFeaturesWithMedianImputation(dataFrame, numericColumns):
         if missingCount == 0:
             continue
 
-        missingRatePercent = missingCount / float(colValues.shape[0])
+        imputedColumnCount += 1
+        totalImputedValues += missingCount
 
         observed = colValues[~missingMask]
         if observed.size == 0:
@@ -32,7 +36,12 @@ def buildFeaturesWithMedianImputation(dataFrame, numericColumns):
         for name in sorted(newColumnsToAdd.keys()):
             dataFrame[name] = newColumnsToAdd[name]
 
-    return dataFrame
+    return dataFrame, {
+        "numeric_columns_imputed": int(imputedColumnCount),
+        "numeric_values_imputed": int(totalImputedValues),
+        "indicator_columns_added": int(len(newColumnsToAdd)),
+    }
+
 
 
 def GetJaxArrays(dataFrame):
@@ -49,14 +58,38 @@ def GetJaxArrays(dataFrame):
             
     categorical = ["S_TYPE_TEMP","P_TYPE"]
 
+    summary = {
+        "rows_before_preprocessing": int(dataFrame.shape[0]),
+        "columns_before_preprocessing": int(dataFrame.shape[1]),
+        "missing_values_before_preprocessing": int(dataFrame.isna().sum().sum()),
+        "description_columns_requested_for_drop": int(len(descriptionColumns)),
+        "categorical_column_count_before_encoding": int(len(categorical)),
+    }
+
+    errorColumns = list(dataFrame.filter(like="_ERROR_").columns)
+    limitColumns = list(dataFrame.filter(like="_LIMIT").columns)
+    hzColumns = list(dataFrame.filter(like="_HZ_").columns)
+    minColumns = list(dataFrame.filter(like="_MIN").columns)
+    maxColumns = list(dataFrame.filter(like="_MAX").columns)
+    removableDescriptionColumns = [column for column in descriptionColumns if column in dataFrame.columns]
+
+    summary["error_columns_removed"] = int(len(errorColumns))
+    summary["limit_columns_removed"] = int(len(limitColumns))
+    summary["hz_columns_removed"] = int(len(hzColumns))
+    summary["min_columns_removed"] = int(len(minColumns))
+    summary["max_columns_removed"] = int(len(maxColumns))
+    summary["description_columns_removed"] = int(len(removableDescriptionColumns))
+
     dataFrame = (
-        dataFrame.drop(columns=dataFrame.filter(like="_ERROR_").columns)
-        .drop(columns=dataFrame.filter(like="_LIMIT").columns)
-        .drop(columns=dataFrame.filter(like="_HZ_").columns)
-        .drop(columns=dataFrame.filter(like="_MIN").columns, errors="ignore")
-        .drop(columns=dataFrame.filter(like="_MAX").columns, errors="ignore")
-        .drop(columns=descriptionColumns)
+        dataFrame.drop(columns=errorColumns)
+        .drop(columns=limitColumns)
+        .drop(columns=hzColumns)
+        .drop(columns=minColumns, errors="ignore")
+        .drop(columns=maxColumns, errors="ignore")
+        .drop(columns=removableDescriptionColumns, errors="ignore")
     )
+
+    summary["columns_after_column_filtering"] = int(dataFrame.shape[1])
 
     numericColumns: list[str] = []
     for column in list(dataFrame.columns):
@@ -66,15 +99,29 @@ def GetJaxArrays(dataFrame):
             continue
         numericColumns.append(column)
 
-    dataFrame = buildFeaturesWithMedianImputation(dataFrame=dataFrame, numericColumns=numericColumns)
+    summary["numeric_feature_count_before_imputation"] = int(len(numericColumns))
 
-    dataFrame[categorical] = dataFrame[categorical].fillna("UNKNOWN")
-    dataFrame = pandas.get_dummies(
-        dataFrame,
-        columns=categorical,
-        drop_first=True,
-        dtype=float,
-    )
+    dataFrame, imputationSummary = buildFeaturesWithMedianImputation(dataFrame=dataFrame, numericColumns=numericColumns)
+    summary.update(imputationSummary)
+
+    missingCategoricalBeforeFill = 0
+    for column in categorical:
+        if column in dataFrame.columns:
+            missingCategoricalBeforeFill += int(dataFrame[column].isna().sum())
+    summary["categorical_missing_values_filled"] = int(missingCategoricalBeforeFill)
+
+    existingCategorical = [column for column in categorical if column in dataFrame.columns]
+    if existingCategorical:
+        dataFrame[existingCategorical] = dataFrame[existingCategorical].fillna("UNKNOWN")
+        dataFrame = pandas.get_dummies(
+            dataFrame,
+            columns=existingCategorical,
+            drop_first=True,
+            dtype=float,
+        )
+
+    summary["columns_after_encoding_and_imputation"] = int(dataFrame.shape[1])
+    summary["missing_values_after_preprocessing"] = int(dataFrame.isna().sum().sum())
 
     Y = jax.numpy.array(dataFrame[["P_HABITABLE"]].to_numpy(dtype=int))
     X = jax.numpy.array(
@@ -85,4 +132,7 @@ def GetJaxArrays(dataFrame):
     featureNames = list(X_df.columns)
     X_df.to_csv("X_features.csv", index=False)
 
-    return X, Y, featureNames
+    summary["rows_after_preprocessing"] = int(X.shape[0])
+    summary["feature_count_after_preprocessing"] = int(X.shape[1])
+
+    return X, Y, featureNames, summary

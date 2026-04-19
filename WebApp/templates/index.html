@@ -30,6 +30,18 @@
         <section class="status-box">
             <h2 class="section-heading">Workflow status</h2>
             <div id="workflow-status" class="status-pill">Loading status...</div>
+            <div id="status-meta" class="status-meta">Waiting for workflow state...</div>
+            <div id="run-output" class="run-output hidden"></div>
+        </section>
+
+        <section class="results-box">
+            <div class="results-header">
+                <h2 class="section-heading">Preprocessing parameters</h2>
+                <div class="results-subtitle" id="preprocessing-subtitle">Waiting for feature engineering results...</div>
+            </div>
+            <div id="preprocessing" class="preprocessing-grid">
+                <div class="empty-state">Loading preprocessing values...</div>
+            </div>
         </section>
 
         <section class="results-box">
@@ -49,11 +61,30 @@ import asyncio
 from js import document
 from pyodide.http import pyfetch
 
+poll_task = None
+last_running_state = False
+
 
 def set_text(element_id, text):
     element = document.getElementById(element_id)
     if element is not None:
         element.textContent = text
+
+
+def set_hidden(element_id, should_hide):
+    element = document.getElementById(element_id)
+    if element is None:
+        return
+    if should_hide:
+        element.classList.add("hidden")
+    else:
+        element.classList.remove("hidden")
+
+
+def set_button_disabled(element_id, disabled):
+    element = document.getElementById(element_id)
+    if element is not None:
+        element.disabled = bool(disabled)
 
 
 def show_error(message):
@@ -123,13 +154,46 @@ def format_metric(value):
         return str(value)
 
 
+def format_unix_seconds(value):
+    try:
+        from datetime import datetime
+        return datetime.fromtimestamp(int(value)).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return "-"
+
+
+def update_output_box(state):
+    output_box = document.getElementById("run-output")
+    if output_box is None:
+        return
+
+    last_error = state.get("last_error")
+    last_stderr = state.get("last_stderr") or ""
+    last_stdout = state.get("last_stdout") or ""
+
+    sections = []
+    if last_error:
+        sections.append(f"Error: {last_error}")
+    if last_stderr.strip():
+        sections.append("stderr\n" + last_stderr.strip())
+    elif last_stdout.strip() and not state.get("running"):
+        sections.append("stdout\n" + last_stdout.strip())
+
+    if sections:
+        output_box.textContent = "\n\n".join(sections)
+        output_box.classList.remove("hidden")
+    else:
+        output_box.textContent = ""
+        output_box.classList.add("hidden")
+
+
 def build_model_card(model):
     card = document.createElement("div")
     card.className = "model-card"
 
     title = document.createElement("h3")
     title.className = "model-card-title"
-    title.textContent = prettify_name(model.get("run_name") or model.get("model_name") or "Unknown model")
+    title.textContent = prettify_name(model.get("display_name") or model.get("run_name") or model.get("model_name") or "Unknown model")
     card.appendChild(title)
 
     metrics_div = document.createElement("div")
@@ -137,12 +201,13 @@ def build_model_card(model):
 
     metrics = model.get("metrics", {})
     preferred_order = [
-        "test_accuracy",
-        "macro_precision",
-        "macro_recall",
-        "macro_f1",
+        "accuracy",
+        "precision",
+        "recall",
+        "f1_score",
         "tree_depth",
         "leaf_count",
+        "estimators_used",
     ]
 
     shown = False
@@ -187,6 +252,28 @@ def build_model_card(model):
     return card
 
 
+def build_preprocessing_card(title_text, items):
+    card = document.createElement("div")
+    card.className = "model-card"
+
+    title = document.createElement("h3")
+    title.className = "model-card-title"
+    title.textContent = title_text
+    card.appendChild(title)
+
+    metrics_div = document.createElement("div")
+    metrics_div.className = "metric-list"
+
+    if items:
+        for item in items:
+            metrics_div.appendChild(create_metric_row(item.get("label", "Value"), format_metric(item.get("value"))))
+    else:
+        metrics_div.appendChild(create_metric_row("Values", "No values found"))
+
+    card.appendChild(metrics_div)
+    return card
+
+
 def workflow_status_text(state):
     if state.get("running"):
         return "Workflow is running..."
@@ -198,6 +285,20 @@ def workflow_status_text(state):
     return "Workflow has not been started from this dashboard yet."
 
 
+def workflow_meta_text(state):
+    if state.get("running"):
+        started = format_unix_seconds(state.get("started_at"))
+        return f"Started at: {started}"
+
+    last_code = state.get("last_return_code")
+    if last_code is None:
+        return "No dashboard-triggered run has finished yet."
+
+    started = format_unix_seconds(state.get("started_at"))
+    finished = format_unix_seconds(state.get("finished_at"))
+    return f"Started at: {started} | Finished at: {finished} | Return code: {last_code}"
+
+
 async def load_status():
     response = await pyfetch("/api/status", method="GET")
     if response.status != 200:
@@ -205,6 +306,10 @@ async def load_status():
 
     data = await response.json()
     set_text("workflow-status", workflow_status_text(data))
+    set_text("status-meta", workflow_meta_text(data))
+    update_output_box(data)
+    set_button_disabled("run-btn", data.get("running", False))
+    return data
 
 
 async def load_results():
@@ -213,12 +318,30 @@ async def load_results():
         raise Exception(f"Results request failed with code {response.status}")
 
     data = await response.json()
+
+    preprocessing_container = document.getElementById("preprocessing")
+    clear_node(preprocessing_container)
+    preprocessing = data.get("preprocessing") or {}
+    preprocessing_groups = preprocessing.get("groups") or {}
+
+    if preprocessing_groups:
+        set_text("preprocessing-subtitle", "Showing latest feature engineering parameters.")
+        preprocessing_container.appendChild(build_preprocessing_card("Dataset overview", preprocessing_groups.get("dataset_overview", [])))
+        preprocessing_container.appendChild(build_preprocessing_card("Before preprocessing", preprocessing_groups.get("before_preprocessing", [])))
+        preprocessing_container.appendChild(build_preprocessing_card("After preprocessing", preprocessing_groups.get("after_preprocessing", [])))
+    else:
+        empty_pre = document.createElement("div")
+        empty_pre.className = "empty-state"
+        empty_pre.textContent = "No preprocessing parameters found yet. Run the workflow first."
+        preprocessing_container.appendChild(empty_pre)
+        set_text("preprocessing-subtitle", "Waiting for feature engineering results...")
+
     results_container = document.getElementById("results")
     clear_node(results_container)
 
     models_map = data.get("models", {})
     models = list(models_map.values()) if isinstance(models_map, dict) else list(models_map)
-    models.sort(key=lambda item: prettify_name(item.get("run_name") or item.get("model_name") or ""))
+    models.sort(key=lambda item: prettify_name(item.get("display_name") or item.get("run_name") or item.get("model_name") or ""))
 
     if not models:
         empty = document.createElement("div")
@@ -233,10 +356,40 @@ async def load_results():
         results_container.appendChild(build_model_card(model))
 
 
+async def poll_until_finished():
+    global last_running_state
+    while True:
+        state = await load_status()
+        is_running = bool(state.get("running"))
+
+        if is_running:
+            last_running_state = True
+            set_text("top-status", "Workflow running...")
+        else:
+            if last_running_state:
+                await load_results()
+                if state.get("last_return_code") == 0:
+                    set_text("top-status", "Workflow finished. Dashboard updated.")
+                else:
+                    set_text("top-status", "Workflow finished with an error. See details below.")
+                last_running_state = False
+            else:
+                break
+        await asyncio.sleep(2)
+
+
+async def ensure_polling():
+    global poll_task
+    if poll_task is None or poll_task.done():
+        poll_task = asyncio.create_task(poll_until_finished())
+
+
 async def run_workflow(_event=None):
     hide_error()
     set_text("top-status", "Starting workflow...")
     set_text("workflow-status", "Starting workflow...")
+    set_text("status-meta", "Submitting run request...")
+    set_button_disabled("run-btn", True)
 
     response = await pyfetch("/api/run", method="POST")
     if response.status != 200:
@@ -245,15 +398,20 @@ async def run_workflow(_event=None):
     data = await response.json()
     message = data.get("message", "Workflow started.")
     set_text("top-status", message)
-    set_text("workflow-status", message)
+    await load_status()
+    await ensure_polling()
 
 
 async def refresh_dashboard(_event=None):
     hide_error()
     set_text("top-status", "Refreshing dashboard...")
-    await load_status()
+    state = await load_status()
     await load_results()
-    set_text("top-status", "Dashboard refreshed.")
+    if state.get("running"):
+        set_text("top-status", "Workflow running...")
+        await ensure_polling()
+    else:
+        set_text("top-status", "Dashboard refreshed.")
 
 
 async def safe_run_workflow(event):
@@ -262,6 +420,7 @@ async def safe_run_workflow(event):
     except Exception as exc:
         show_error(exc)
         set_text("top-status", "Workflow start failed.")
+        set_button_disabled("run-btn", False)
 
 
 async def safe_refresh_dashboard(event):
@@ -277,10 +436,10 @@ def bind_buttons():
     refresh_button = document.getElementById("refresh-btn")
 
     if run_button is not None:
-        run_button.addEventListener("click", lambda event: asyncio.create_task(safe_run_workflow(event)))
+        run_button.onclick = lambda event: asyncio.create_task(safe_run_workflow(event))
 
     if refresh_button is not None:
-        refresh_button.addEventListener("click", lambda event: asyncio.create_task(safe_refresh_dashboard(event)))
+        refresh_button.onclick = lambda event: asyncio.create_task(safe_refresh_dashboard(event))
 
 
 async def initialize_dashboard():
