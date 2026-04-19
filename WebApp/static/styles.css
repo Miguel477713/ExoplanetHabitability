@@ -21,6 +21,32 @@
     box-sizing: border-box;
 }
 
+.hero-title {
+    font-size: 48px;
+    font-weight: 800;
+    margin-bottom: 10px;
+
+    background: linear-gradient(90deg, #00c6ff, #0072ff);
+    background-clip: text;
+    -webkit-background-clip: text;
+
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+
+    text-align: center;
+}
+
+.hero-subtitle {
+    font-size: 18px;
+    color: #cccccc;
+    text-align: center;
+    margin-bottom: 12px;
+}
+
+.hero-center {
+    text-align: center;
+}
+
 html, body {
     margin: 0;
     padding: 0;
