@@ -62,7 +62,6 @@ PREPROCESSING_GROUPS = {
         "categorical_missing_values_filled",
         "columns_after_encoding_and_imputation",
         "rows_after_preprocessing",
-        "feature_count_after_preprocessing",
         "missing_values_after_preprocessing",
         "feature_count_before_intercept",
     ],
@@ -86,7 +85,6 @@ PREPROCESSING_LABELS = {
     "categorical_missing_values_filled": "Missing categorical values filled",
     "columns_after_encoding_and_imputation": "Columns after encoding and imputation",
     "rows_after_preprocessing": "Rows after preprocessing",
-    "feature_count_after_preprocessing": "Final feature count",
     "missing_values_after_preprocessing": "Missing values after preprocessing",
     "feature_count_before_intercept": "Feature count before intercept",
 }
